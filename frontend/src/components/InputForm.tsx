@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { DailySchedule } from "../types";
-import CommitmentsForm, { Commitment } from "./CommitmentsForm";
+import CommitmentsForm from "./CommitmentsForm";
+import type { Commitment } from "./CommitmentsForm";
 
 type Props = {
   onGenerate: (schedule: DailySchedule) => void;
