@@ -95,35 +95,63 @@ function buildFallbackSchedule(prefs = {}) {
     blocks.push({ start: fromMinutes(cc.start), end: fromMinutes(cc.end), title: cc.title, category: cc.category });
   }
 
-  // Desired filler blocks sequence (durations in minutes)
+  // Desired filler blocks with preferred time windows (minutes from 00:00)
   const hobbyText = typeof prefs.hobby === "string" && prefs.hobby.trim() ? prefs.hobby.trim() : null;
   const desired = [
-    { title: "Breakfast", dur: 30, category: "Personal" },
-    { title: "Morning routine", dur: 30, category: "Health" },
-    { title: "Focused work", dur: 180, category: "Work" },
-    { title: "Lunch", dur: 60, category: "Personal" },
-    { title: "Afternoon work", dur: 180, category: "Work" },
-    { title: "Chores", dur: 45, category: "Personal" },
-    { title: "Dinner", dur: 45, category: "Personal" },
+    { key: "breakfast", title: "Breakfast", dur: 30, category: "Personal", earliest: 5 * 60, latest: 11 * 60, max: 1 },
+    { key: "morning", title: "Morning routine", dur: 30, category: "Health", earliest: 5 * 60, latest: 10 * 60, max: 1 },
+    { key: "focused", title: "Focused work", dur: 180, category: "Work", earliest: 8 * 60, latest: 18 * 60, max: 10 },
+    { key: "lunch", title: "Lunch", dur: 60, category: "Personal", earliest: 11 * 60, latest: 14 * 60, max: 1 },
+    { key: "afternoon", title: "Afternoon work", dur: 180, category: "Work", earliest: 12 * 60, latest: 20 * 60, max: 10 },
+    { key: "chores", title: "Chores", dur: 45, category: "Personal", earliest: 16 * 60, latest: 21 * 60, max: 1 },
+    { key: "dinner", title: "Dinner", dur: 45, category: "Personal", earliest: 17 * 60, latest: 22 * 60, max: 1 },
   ];
-  if (hobbyText) desired.push({ title: `Hobby: ${hobbyText}`, dur: 60, category: "Personal" });
+  if (hobbyText) desired.push({ key: "hobby", title: `Hobby: ${hobbyText}`, dur: 60, category: "Personal", earliest: 17 * 60, latest: 23 * 60, max: 1 });
 
-  // Fill each gap by placing desired blocks in order, allowing truncation to fit
-  let desiredIdx = 0;
+  const placedCounts = {};
+
+  function chooseDesiredAt(pos) {
+    // Simpler time-of-day rules to avoid placing morning items in evening
+    const placed = (k) => (placedCounts[k] || 0) > 0;
+
+    // Morning window
+    if (pos < 11 * 60) {
+      if (!placed("breakfast")) return desired.find(d => d.key === "breakfast");
+      if (!placed("morning")) return desired.find(d => d.key === "morning");
+      return desired.find(d => d.key === "focused");
+    }
+
+    // Midday window
+    if (pos >= 11 * 60 && pos < 16 * 60) {
+      if (!placed("lunch") && pos >= 11 * 60 && pos < 14 * 60) return desired.find(d => d.key === "lunch");
+      return desired.find(d => d.key === "focused");
+    }
+
+    // Evening window
+    if (pos >= 16 * 60) {
+      if (!placed("dinner") && pos >= 17 * 60) return desired.find(d => d.key === "dinner");
+      if (hobbyText && !placed("hobby") && pos >= 17 * 60) return desired.find(d => d.key === "hobby");
+      if (!placed("chores") && pos >= 16 * 60) return desired.find(d => d.key === "chores");
+      return desired.find(d => d.key === "afternoon") || desired.find(d => d.key === "focused");
+    }
+
+    // Fallback generic
+    return desired.find(d => d.key === "focused") || { key: "free", title: "Free time", dur: 30, category: "Personal", earliest: 0, latest: 24 * 60, max: 100 };
+  }
+
+  // Fill each gap by selecting appropriate desired blocks based on time-of-day constraints
   for (const gap of gaps) {
     let pos = gap.start;
-    let remaining = gap.end - pos;
-    while (remaining > 10) {
-      const d = desired[desiredIdx % desired.length];
+    while (pos < gap.end) {
+      const d = chooseDesiredAt(pos);
+      const remaining = gap.end - pos;
       const placeDur = Math.min(d.dur, remaining);
       blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + placeDur), title: d.title, category: d.category });
+      if (!placedCounts[d.key]) placedCounts[d.key] = 0;
+      placedCounts[d.key] += 1;
       pos += placeDur;
-      remaining = gap.end - pos;
-      desiredIdx += 1;
-    }
-    if (remaining > 0 && remaining <= 10) {
-      // small leftover -> mark as Free time
-      blocks.push({ start: fromMinutes(gap.end - remaining), end: fromMinutes(gap.end), title: "Free time", category: "Personal" });
+      // prevent infinite loop on zero-duration
+      if (placeDur <= 0) break;
     }
   }
 

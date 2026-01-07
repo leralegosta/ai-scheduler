@@ -31,6 +31,7 @@ export default function CalendarView({ schedule }: { schedule: DailySchedule }) 
             start: `${schedule.date}T${b.start}`,
             end: `${schedule.date}T${b.end}`,
             backgroundColor: colorMap[b.category],
+            textColor: "#000",
           }))}
       />
     </div>
