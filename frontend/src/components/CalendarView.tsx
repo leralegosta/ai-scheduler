@@ -1,6 +1,6 @@
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
-import { DailySchedule } from "../types";
+import type { DailySchedule } from "../types";
 
 export default function CalendarView({ schedule }: { schedule: DailySchedule }) {
   return (

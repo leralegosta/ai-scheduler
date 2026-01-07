@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DailySchedule } from "../types";
+import type { DailySchedule } from "../types";
 
 type Props = {
   onGenerate: (schedule: DailySchedule) => void;

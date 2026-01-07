@@ -1,7 +1,7 @@
 import InputForm from "./components/InputForm";
 import CalendarView from "./components/CalendarView";
 import { useState } from "react";
-import { DailySchedule } from "./types";
+import type { DailySchedule } from "./types";
 
 export default function App() {
   const [schedule, setSchedule] = useState<DailySchedule | null>(null);
