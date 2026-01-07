@@ -1,5 +1,6 @@
 import React from "react";
 
+// define the Commitment type
 export type Commitment = {
   title: string;
   category: "Academics" | "Work";
@@ -7,11 +8,13 @@ export type Commitment = {
   end: string;   // HH:MM
 };
 
+// define the Props type for CommitmentsForm
 type Props = {
   commitments: Commitment[];
   onChange: (next: Commitment[]) => void;
 };
 
+// CommitmentsForm component
 export default function CommitmentsForm({ commitments, onChange }: Props) {
   function update(index: number, patch: Partial<Commitment>) {
     const next = commitments.slice();
@@ -19,16 +22,19 @@ export default function CommitmentsForm({ commitments, onChange }: Props) {
     onChange(next);
   }
 
+  // add a new commitment
   function add() {
     onChange([...commitments, { title: "", category: "Academics", start: "09:00", end: "10:00" }]);
   }
 
+  // remove a commitment at a specific index
   function remove(index: number) {
     const next = commitments.slice();
     next.splice(index, 1);
     onChange(next);
   }
 
+  // render the component
   return (
     <div style={container}>
       <h3 style={{ margin: 0, fontSize: 18, color: "#1f1f29" }}>Commitments</h3>
@@ -51,6 +57,7 @@ export default function CommitmentsForm({ commitments, onChange }: Props) {
   );
 }
 
+// styles
 const container: React.CSSProperties = {
   display: "grid",
   gap: 8,

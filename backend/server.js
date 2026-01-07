@@ -1,15 +1,27 @@
 import express from "express";
 import cors from "cors";
 
+// initialize Express app
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// health check endpoint
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
+// schedule generation endpoint
 app.post("/generate", async (req, res) => {
   console.log("/generate request received", { body: req.body });
   const prompt = `You are a scheduling AI.\n\nRules:\n- Output valid JSON only\n- No explanations\n- No markdown\n\nSchema:\n{\n  \"date\": \"YYYY-MM-DD\",\n  \"blocks\": [\n    { \"start\": \"HH:MM\", \"end\": \"HH:MM\", \"title\": \"\", \"category\": \"Sleep|Health|Academics|Work|Personal\" }\n  ]\n}\n\nInput:\n${JSON.stringify(req.body)}`;
+
+  // By default use the deterministic fallback scheduler.
+  // Set environment variable `USE_MODEL=true` to attempt calling the local model instead.
+  const useModel = process.env.USE_MODEL === "true";
+  if (!useModel) {
+    console.log("Using fallback scheduler (USE_MODEL not set)");
+    const fallback = buildFallbackSchedule(req.body);
+    return res.json(fallback);
+  }
 
   try {
     const controller = new AbortController();
@@ -113,63 +125,85 @@ function buildFallbackSchedule(prefs = {}) {
 
   const used = { breakfast: false, morning: false, lunch: false, dinner: false, chores: false, hobby: false };
 
+  // Diversified filler: prefer single-instance items (meals, hobby) then rotate through health/personal/work blocks
+  const placedCounts = {};
+  const desiredItems = [];
+  if (hobbyText) {
+    desiredItems.push({ key: "hobby", title: `Hobby: ${hobbyText}`, category: "Personal", dur: 60, single: true, maxPerDay: 1, earliest: hobbyWindow ? hobbyWindow.earliest : wakeMin, latest: hobbyWindow ? hobbyWindow.latest : bedMin });
+  }
+  // Meals and single items
+  desiredItems.push({ key: "breakfast", title: "Breakfast", category: "Personal", dur: 30, single: true, maxPerDay: 1, earliest: wakeMin, latest: 11 * 60 });
+  desiredItems.push({ key: "lunch", title: "Lunch", category: "Personal", dur: 60, single: true, maxPerDay: 1, earliest: 11 * 60, latest: 14 * 60 });
+  desiredItems.push({ key: "dinner", title: "Dinner", category: "Personal", dur: 45, single: true, maxPerDay: 1, earliest: 17 * 60, latest: 22 * 60 });
+  desiredItems.push({ key: "chores", title: "Chores", category: "Personal", dur: 45, single: true, maxPerDay: 1, earliest: 16 * 60, latest: 21 * 60 });
+
+  // Health / Personal activities
+  desiredItems.push({ key: "gym", title: "Gym", category: "Health", dur: 45, single: false, maxPerDay: 1, earliest: 6 * 60, latest: 10 * 60 });
+  desiredItems.push({ key: "walk", title: "Outdoor walk", category: "Health", dur: 25, single: false, maxPerDay: 1, earliest: 6 * 60, latest: 20 * 60 });
+  desiredItems.push({ key: "selfcare", title: "Self-care", category: "Personal", dur: 30, single: false, maxPerDay: 1, earliest: 7 * 60, latest: 22 * 60 });
+  desiredItems.push({ key: "reading", title: "Reading", category: "Personal", dur: 30, single: false, maxPerDay: 2, earliest: 6 * 60, latest: 23 * 60 });
+  desiredItems.push({ key: "break", title: "Break", category: "Personal", dur: 15, single: false, maxPerDay: 3, earliest: wakeMin, latest: bedMin });
+
+  // Work blocks (repeatable)
+  desiredItems.push({ key: "afternoon", title: "Afternoon work", category: "Work", dur: 120, single: false, maxPerDay: 2, earliest: 12 * 60, latest: 18 * 60 });
+  desiredItems.push({ key: "focused", title: "Focused work", category: "Work", dur: 60, single: false, maxPerDay: 3, earliest: wakeMin, latest: bedMin });
+
+  function canPlace(d, pos, remaining) {
+    if (pos < (d.earliest || wakeMin)) return false;
+    if (pos >= (d.latest || bedMin)) return false;
+    const placed = placedCounts[d.key] || 0;
+    if (d.maxPerDay && placed >= d.maxPerDay) return false;
+    const maxDur = Math.min(d.dur || 30, remaining, (d.latest || bedMin) - pos);
+    return maxDur >= Math.min(15, d.dur || 15);
+  }
+
+  function chooseDesiredAt(pos, remaining) {
+    // prefer single items not yet placed
+    for (const d of desiredItems) {
+      const placed = placedCounts[d.key] || 0;
+      if (d.single && placed > 0) continue;
+      if (d.maxPerDay && placed >= d.maxPerDay) continue;
+      if (canPlace(d, pos, remaining)) return d;
+    }
+    // otherwise pick the least-used suitable item
+    let candidate = null;
+    let bestCount = Infinity;
+    for (const d of desiredItems) {
+      const placed = placedCounts[d.key] || 0;
+      if (d.maxPerDay && placed >= d.maxPerDay) continue;
+      if (!canPlace(d, pos, remaining)) continue;
+      const c = placed;
+      if (c < bestCount) {
+        bestCount = c;
+        candidate = d;
+      }
+    }
+    return candidate;
+  }
+
   for (const gap of gaps) {
     let pos = gap.start;
     while (pos < gap.end) {
       const remaining = gap.end - pos;
-      // hobby
-      if (hobbyWindow && !used.hobby && pos >= hobbyWindow.earliest && pos < hobbyWindow.latest) {
-        const dur = Math.min(60, remaining);
-        blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + dur), title: `Hobby: ${hobbyText}`, category: "Personal" });
-        used.hobby = true;
+
+      // pick desired block by window and usage
+      const choice = chooseDesiredAt(pos, remaining);
+      if (!choice) {
+        // fallback to focused/afternoon split
+        const isAfternoon = pos >= 12 * 60 && pos < 18 * 60;
+        const title = isAfternoon ? "Afternoon work" : "Focused work";
+        const dur = Math.min(isAfternoon ? 120 : 60, remaining);
+        blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + dur), title, category: "Work" });
+        placedCounts[isAfternoon ? "afternoon" : "focused"] = (placedCounts[isAfternoon ? "afternoon" : "focused"] || 0) + 1;
         pos += dur;
         continue;
       }
-      // breakfast
-      if (!used.breakfast && pos < 11 * 60 && remaining >= 20) {
-        const dur = Math.min(30, remaining);
-        blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + dur), title: "Breakfast", category: "Personal" });
-        used.breakfast = true;
-        pos += dur;
-        continue;
-      }
-      // morning routine
-      if (!used.morning && pos < 11 * 60 && remaining >= 15) {
-        const dur = Math.min(30, remaining);
-        blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + dur), title: "Morning routine", category: "Health" });
-        used.morning = true;
-        pos += dur;
-        continue;
-      }
-      // lunch
-      if (!used.lunch && pos >= 11 * 60 && pos < 14 * 60 && remaining >= 30) {
-        const dur = Math.min(60, remaining);
-        blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + dur), title: "Lunch", category: "Personal" });
-        used.lunch = true;
-        pos += dur;
-        continue;
-      }
-      // dinner
-      if (!used.dinner && pos >= 17 * 60 && remaining >= 30) {
-        const dur = Math.min(45, remaining);
-        blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + dur), title: "Dinner", category: "Personal" });
-        used.dinner = true;
-        pos += dur;
-        continue;
-      }
-      // chores
-      if (!used.chores && pos >= 16 * 60 && remaining >= 20) {
-        const dur = Math.min(45, remaining);
-        blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + dur), title: "Chores", category: "Personal" });
-        used.chores = true;
-        pos += dur;
-        continue;
-      }
-      // focused / work
-      const isAfternoon = pos >= 12 * 60 && pos < 18 * 60;
-      const workDur = Math.min(isAfternoon ? 180 : 60, remaining);
-      blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + workDur), title: isAfternoon ? "Afternoon work" : "Focused work", category: "Work" });
-      pos += workDur;
+
+      const dur = Math.min(choice.dur || 30, remaining, (choice.latest || bedMin) - pos);
+      if (dur <= 0) break;
+      blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + dur), title: choice.title, category: choice.category });
+      placedCounts[choice.key] = (placedCounts[choice.key] || 0) + 1;
+      pos += dur;
     }
   }
 
