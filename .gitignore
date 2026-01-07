@@ -1,0 +1,18 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+
+# OS
+.DS_Store
+
+# Build outputs
+dist/
+build/
+
+# Ollama / local model artifacts (if any)
+*.gguf
