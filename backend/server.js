@@ -60,26 +60,107 @@ function buildFallbackSchedule(prefs = {}) {
 
   const blocks = [];
 
-  // Sleep block: prefer bed->wake if it doesn't cross midnight; else default to 8h before wake
-  if (bed && toMinutes(bed) <= toMinutes(wake)) {
-    blocks.push({ start: bed, end: wake, title: "Sleep", category: "Sleep" });
+  // Determine sleep interval using bed and wake. If bed provided, use bed->wake (allow crossing midnight).
+  let sleepStartMin = null;
+  let sleepEndMin = null;
+  if (bed) {
+    sleepStartMin = toMinutes(bed);
+    sleepEndMin = toMinutes(wake);
+    if (sleepEndMin <= sleepStartMin) sleepEndMin += 24 * 60; // crosses midnight
   } else {
-    blocks.push({ start: subtractHours(wake, 8), end: wake, title: "Sleep", category: "Sleep" });
+    // default 8 hours ending at wake
+    sleepEndMin = toMinutes(wake);
+    sleepStartMin = sleepEndMin - 8 * 60;
   }
 
-  // Morning routine
-  blocks.push({ start: addMinutes(wake, 0), end: addMinutes(wake, 30), title: "Morning routine", category: "Health" });
-
-  // User commitments: placed exactly at specified times
+  // Helper: normalize commitments and convert to minute intervals (allow crossing midnight)
+  const normCommitments = [];
   for (const c of commitments) {
     if (c && typeof c.start === "string" && typeof c.end === "string") {
-      blocks.push({ start: c.start, end: c.end, title: c.title || "Commitment", category: c.category || "Work" });
+      let s = toMinutes(c.start);
+      let e = toMinutes(c.end);
+      if (e <= s) e += 24 * 60;
+      normCommitments.push({ start: s, end: e, title: c.title || "Commitment", category: c.category || "Work" });
     }
   }
 
-  // A couple of filler blocks
-  blocks.push({ start: addMinutes(wake, 60), end: addMinutes(wake, 240), title: "Focused work", category: "Work" });
-  blocks.push({ start: addMinutes(wake, 240), end: addMinutes(wake, 300), title: "Lunch", category: "Personal" });
+  // Trim sleep if it overlaps any commitment: shorten sleep to avoid overlapping commitments
+  let keepSleep = true;
+  for (const cc of normCommitments) {
+    if (!(sleepEndMin <= cc.start || cc.end <= sleepStartMin)) {
+      // overlap exists
+      // if commitment fully covers sleep -> drop sleep
+      if (cc.start <= sleepStartMin && cc.end >= sleepEndMin) {
+        keepSleep = false;
+        break;
+      }
+      // overlap at sleep start -> move sleepStart after commitment
+      if (cc.start <= sleepStartMin && cc.end < sleepEndMin) {
+        sleepStartMin = cc.end;
+      } else if (cc.start > sleepStartMin && cc.start < sleepEndMin) {
+        // overlap at sleep end -> move sleepEnd before commitment
+        sleepEndMin = cc.start;
+      }
+    }
+  }
+
+  if (keepSleep && sleepEndMin > sleepStartMin) {
+    blocks.push({ start: fromMinutes(sleepStartMin), end: fromMinutes(sleepEndMin), title: "Sleep", category: "Sleep" });
+  }
+
+  // Add commitments as fixed blocks (converted back to HH:MM mod 24)
+  for (const cc of normCommitments) {
+    // normalize to day by mod 24h for display (events that end after midnight will use end time mod 24)
+    blocks.push({ start: fromMinutes(cc.start), end: fromMinutes(cc.end), title: cc.title, category: cc.category });
+  }
+
+  // Proposed fillers (relative to wake)
+  const fillers = [
+    { start: toMinutes(wake) + 0, end: toMinutes(wake) + 30, title: "Morning routine", category: "Health" },
+    { start: toMinutes(wake) + 60, end: toMinutes(wake) + 240, title: "Focused work", category: "Work" },
+    { start: toMinutes(wake) + 240, end: toMinutes(wake) + 300, title: "Lunch", category: "Personal" },
+    { start: toMinutes(wake) + 360, end: toMinutes(wake) + 540, title: "Study / Academics", category: "Academics" },
+  ];
+
+  // For each filler, if it overlaps any commitment or existing sleep block, trim or skip it
+  for (const f of fillers) {
+    let fStart = f.start;
+    let fEnd = f.end;
+    // allow filler end to cross midnight
+    if (fEnd <= fStart) fEnd += 24 * 60;
+
+    // Trim against sleep
+    if (sleepEndMin && sleepStartMin && !(fEnd <= sleepStartMin || sleepEndMin <= fStart)) {
+      // overlap: trim filler to after sleep or before sleep
+      if (fStart < sleepStartMin && fEnd > sleepEndMin) {
+        // filler fully covers sleep: split not supported -> skip
+        continue;
+      }
+      if (fStart < sleepStartMin && fEnd > sleepStartMin) fEnd = sleepStartMin;
+      if (fStart < sleepEndMin && fEnd > sleepEndMin) fStart = sleepEndMin;
+    }
+
+    // Trim against commitments
+    for (const cc of normCommitments) {
+      if (fEnd <= cc.start || cc.end <= fStart) continue;
+      // overlap exists; try trimming filler start forward past commitment end
+      if (cc.end < fEnd) {
+        fStart = Math.max(fStart, cc.end);
+      } else if (cc.start > fStart) {
+        fEnd = Math.min(fEnd, cc.start);
+      } else {
+        // commitment fully covers filler -> skip
+        fStart = fEnd;
+      }
+    }
+
+    if (fEnd > fStart) {
+      blocks.push({ start: fromMinutes(fStart), end: fromMinutes(fEnd), title: f.title, category: f.category });
+    }
+  }
+
+  // Sort blocks by start time for display
+  blocks.sort((a, b) => toMinutes(a.start) - toMinutes(b.start));
 
   return { date, blocks };
 }
