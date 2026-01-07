@@ -88,6 +88,32 @@ function buildFallbackSchedule(prefs = {}) {
   }
   normCommitments.sort((a, b) => a.start - b.start);
 
+  // Reserve first and last hour for morning/night routine if they don't conflict with commitments
+  const morningStart = wakeMin;
+  const morningEnd = Math.min(wakeMin + 60, bedMin);
+  const nightEnd = bedMin;
+  const nightStart = Math.max(bedMin - 60, wakeMin);
+
+  function overlapsExisting(s, e) {
+    for (const cc of normCommitments) {
+      if (!(cc.end <= s || cc.start >= e)) return true;
+    }
+    return false;
+  }
+
+  if (morningEnd > morningStart && !overlapsExisting(morningStart, morningEnd)) {
+    normCommitments.push({ start: morningStart, end: morningEnd, title: "Morning routine", category: "Health" });
+  }
+  if (nightEnd > nightStart && !overlapsExisting(nightStart, nightEnd)) {
+    // avoid duplicating morning if windows collide in very short days
+    if (!(nightStart <= morningStart && nightEnd >= morningEnd)) {
+      normCommitments.push({ start: nightStart, end: nightEnd, title: "Night routine", category: "Health" });
+    }
+  }
+
+  // re-sort after inserting reserved routines
+  normCommitments.sort((a, b) => a.start - b.start);
+
   const gaps = [];
   let cursor = wakeMin;
   for (const cc of normCommitments) {
