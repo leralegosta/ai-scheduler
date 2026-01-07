@@ -16,6 +16,8 @@ export default function InputForm({ onGenerate }: Props) {
     setError(null);
     setLoading(true);
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       const res = await fetch("http://localhost:3001/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -24,6 +26,7 @@ export default function InputForm({ onGenerate }: Props) {
           wake_time: wake,
           bed_time: bed,
         }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -34,8 +37,12 @@ export default function InputForm({ onGenerate }: Props) {
       onGenerate(data);
     } catch (e) {
       console.error(e);
-      setError("Failed to generate schedule. Backend may be offline.");
+      const msg = (e as any)?.name === "AbortError" ? "Request timed out." : "Failed to generate schedule. Backend may be offline.";
+      setError(msg);
     } finally {
+      // Ensure we clear the timeout even on success
+      // @ts-ignore - timeout type differs across environments
+      clearTimeout(timeout);
       setLoading(false);
     }
   }

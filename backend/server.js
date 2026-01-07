@@ -5,13 +5,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Simple health check
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.post("/generate", async (req, res) => {
+  console.log("/generate request received", { body: req.body });
   const prompt = `You are a scheduling AI.\n\nRules:\n- Output valid JSON only\n- No explanations\n- No markdown\n\nSchema:\n{\n  "date": "YYYY-MM-DD",\n  "blocks": [\n    { "start": "HH:MM", "end": "HH:MM", "title": "", "category": "Sleep|Health|Academics|Work|Personal" }\n  ]\n}\n\nUser preferences:\n${JSON.stringify(req.body)}`;
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2000);
-    const ollamaResp = await fetch("http://localhost:11434/api/generate", {
+    const base = process.env.OLLAMA_URL || "http://localhost:11434";
+    const ollamaResp = await fetch(`${base}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -33,11 +40,13 @@ app.post("/generate", async (req, res) => {
     // payload.response should be a JSON string when format: 'json'
     const raw = payload.response ?? payload;
     const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+    console.log("/generate success via Ollama");
     return res.json(data);
   } catch (e) {
     console.error("Ollama error, falling back:", e?.message || e);
     // Fallback deterministic schedule so the UI still responds
     const fallback = buildFallbackSchedule(req.body);
+    console.log("/generate responded with fallback");
     return res.json(fallback);
   }
 });
