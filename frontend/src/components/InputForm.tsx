@@ -9,20 +9,35 @@ export default function InputForm({ onGenerate }: Props) {
   const [sleep, setSleep] = useState(9);
   const [wake, setWake] = useState("08:00");
   const [bed, setBed] = useState("23:00");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function generateSchedule() {
-    const res = await fetch("http://localhost:3001/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sleep_hours: sleep,
-        wake_time: wake,
-        bed_time: bed,
-      }),
-    });
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch("http://localhost:3001/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sleep_hours: sleep,
+          wake_time: wake,
+          bed_time: bed,
+        }),
+      });
 
-    const data = await res.json();
-    onGenerate(data);
+      if (!res.ok) {
+        throw new Error(`Request failed: ${res.status}`);
+      }
+
+      const data = await res.json();
+      onGenerate(data);
+    } catch (e) {
+      console.error(e);
+      setError("Failed to generate schedule. Backend may be offline.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -44,7 +59,10 @@ export default function InputForm({ onGenerate }: Props) {
         <input type="time" value={bed} onChange={e => setBed(e.target.value)} />
       </label>
 
-      <button onClick={generateSchedule}>Generate Schedule</button>
+      <button onClick={generateSchedule} disabled={loading}>
+        {loading ? "Generating…" : "Generate Schedule"}
+      </button>
+      {error && <div style={{ color: "crimson" }}>{error}</div>}
     </div>
   );
 }
