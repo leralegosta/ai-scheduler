@@ -11,6 +11,7 @@ export default function InputForm({ onGenerate }: Props) {
   const [wake, setWake] = useState("08:00");
   const [bed, setBed] = useState("23:00");
   const [commitments, setCommitments] = useState<Commitment[]>([]);
+  const [hobby, setHobby] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,6 +28,7 @@ export default function InputForm({ onGenerate }: Props) {
           wake_time: wake,
           bed_time: bed,
           commitments,
+          hobby,
         }),
         signal: controller.signal,
       });
@@ -59,6 +61,11 @@ export default function InputForm({ onGenerate }: Props) {
       <label style={labelStyle}>
         Bedtime
         <input style={inputStyle} type="time" value={bed} onChange={e => setBed(e.target.value)} />
+      </label>
+
+      <label style={labelStyle}>
+        Preference (hobby)
+        <input style={inputStyle} placeholder="e.g. Painting in the evening" value={hobby} onChange={e => setHobby(e.target.value)} />
       </label>
 
       <CommitmentsForm commitments={commitments} onChange={setCommitments} />

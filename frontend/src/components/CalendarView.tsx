@@ -3,6 +3,17 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import type { DailySchedule } from "../types";
 
 export default function CalendarView({ schedule }: { schedule: DailySchedule }) {
+  // Hide Sleep blocks visually and restrict visible hours to earliest->latest non-sleep blocks
+  const nonSleep = schedule.blocks.filter(b => b.category !== "Sleep");
+  const starts = nonSleep.map(b => b.start);
+  const ends = nonSleep.map(b => b.end);
+  const minStart = starts.length ? starts.reduce((a, b) => (a < b ? a : b)) : "07:00";
+  const maxEnd = ends.length ? ends.reduce((a, b) => (a > b ? a : b)) : "22:00";
+
+  // FullCalendar expects slotMinTime/slotMaxTime like "08:00:00"
+  const slotMinTime = `${minStart}:00`;
+  const slotMaxTime = `${maxEnd}:00`;
+
   return (
     <div style={cardStyle}>
       <FullCalendar
@@ -10,12 +21,17 @@ export default function CalendarView({ schedule }: { schedule: DailySchedule }) 
         initialView="timeGridDay"
         allDaySlot={false}
         height="auto"
-        events={schedule.blocks.map(b => ({
-          title: b.title,
-          start: `${schedule.date}T${b.start}`,
-          end: `${schedule.date}T${b.end}`,
-          backgroundColor: colorMap[b.category],
-        }))}
+        slotMinTime={slotMinTime}
+        slotMaxTime={slotMaxTime}
+        initialScrollTime={slotMinTime}
+        events={schedule.blocks
+          .filter(b => b.category !== "Sleep")
+          .map(b => ({
+            title: b.title,
+            start: `${schedule.date}T${b.start}`,
+            end: `${schedule.date}T${b.end}`,
+            backgroundColor: colorMap[b.category],
+          }))}
       />
     </div>
   );

@@ -60,102 +60,70 @@ function buildFallbackSchedule(prefs = {}) {
 
   const blocks = [];
 
-  // Determine sleep interval using bed and wake. If bed provided, use bed->wake (allow crossing midnight).
-  let sleepStartMin = null;
-  let sleepEndMin = null;
-  if (bed) {
-    sleepStartMin = toMinutes(bed);
-    sleepEndMin = toMinutes(wake);
-    if (sleepEndMin <= sleepStartMin) sleepEndMin += 24 * 60; // crosses midnight
-  } else {
-    // default 8 hours ending at wake
-    sleepEndMin = toMinutes(wake);
-    sleepStartMin = sleepEndMin - 8 * 60;
-  }
+  // Determine window to show: wake -> bed (bed may be after midnight)
+  const wakeMin = toMinutes(wake);
+  let bedMin = bed ? toMinutes(bed) : wakeMin + 15 * 60; // default 15 hours awake window
+  if (bed && bedMin <= wakeMin) bedMin += 24 * 60;
 
-  // Helper: normalize commitments and convert to minute intervals (allow crossing midnight)
+  // Normalize commitments and keep only those that intersect the wake->bed window
   const normCommitments = [];
   for (const c of commitments) {
     if (c && typeof c.start === "string" && typeof c.end === "string") {
       let s = toMinutes(c.start);
       let e = toMinutes(c.end);
       if (e <= s) e += 24 * 60;
+      // if commitment intersects window, clip it to the window
+      if (e <= wakeMin || s >= bedMin) continue;
+      s = Math.max(s, wakeMin);
+      e = Math.min(e, bedMin);
       normCommitments.push({ start: s, end: e, title: c.title || "Commitment", category: c.category || "Work" });
     }
   }
+  normCommitments.sort((a, b) => a.start - b.start);
 
-  // Trim sleep if it overlaps any commitment: shorten sleep to avoid overlapping commitments
-  let keepSleep = true;
+  // Build gaps between wakeMin and bedMin excluding commitments
+  const gaps = [];
+  let cursor = wakeMin;
   for (const cc of normCommitments) {
-    if (!(sleepEndMin <= cc.start || cc.end <= sleepStartMin)) {
-      // overlap exists
-      // if commitment fully covers sleep -> drop sleep
-      if (cc.start <= sleepStartMin && cc.end >= sleepEndMin) {
-        keepSleep = false;
-        break;
-      }
-      // overlap at sleep start -> move sleepStart after commitment
-      if (cc.start <= sleepStartMin && cc.end < sleepEndMin) {
-        sleepStartMin = cc.end;
-      } else if (cc.start > sleepStartMin && cc.start < sleepEndMin) {
-        // overlap at sleep end -> move sleepEnd before commitment
-        sleepEndMin = cc.start;
-      }
-    }
+    if (cc.start > cursor) gaps.push({ start: cursor, end: cc.start });
+    cursor = Math.max(cursor, cc.end);
   }
-
-  if (keepSleep && sleepEndMin > sleepStartMin) {
-    blocks.push({ start: fromMinutes(sleepStartMin), end: fromMinutes(sleepEndMin), title: "Sleep", category: "Sleep" });
-  }
+  if (cursor < bedMin) gaps.push({ start: cursor, end: bedMin });
 
   // Add commitments as fixed blocks (converted back to HH:MM mod 24)
   for (const cc of normCommitments) {
-    // normalize to day by mod 24h for display (events that end after midnight will use end time mod 24)
     blocks.push({ start: fromMinutes(cc.start), end: fromMinutes(cc.end), title: cc.title, category: cc.category });
   }
 
-  // Proposed fillers (relative to wake)
-  const fillers = [
-    { start: toMinutes(wake) + 0, end: toMinutes(wake) + 30, title: "Morning routine", category: "Health" },
-    { start: toMinutes(wake) + 60, end: toMinutes(wake) + 240, title: "Focused work", category: "Work" },
-    { start: toMinutes(wake) + 240, end: toMinutes(wake) + 300, title: "Lunch", category: "Personal" },
-    { start: toMinutes(wake) + 360, end: toMinutes(wake) + 540, title: "Study / Academics", category: "Academics" },
+  // Desired filler blocks sequence (durations in minutes)
+  const hobbyText = typeof prefs.hobby === "string" && prefs.hobby.trim() ? prefs.hobby.trim() : null;
+  const desired = [
+    { title: "Breakfast", dur: 30, category: "Personal" },
+    { title: "Morning routine", dur: 30, category: "Health" },
+    { title: "Focused work", dur: 180, category: "Work" },
+    { title: "Lunch", dur: 60, category: "Personal" },
+    { title: "Afternoon work", dur: 180, category: "Work" },
+    { title: "Chores", dur: 45, category: "Personal" },
+    { title: "Dinner", dur: 45, category: "Personal" },
   ];
+  if (hobbyText) desired.push({ title: `Hobby: ${hobbyText}`, dur: 60, category: "Personal" });
 
-  // For each filler, if it overlaps any commitment or existing sleep block, trim or skip it
-  for (const f of fillers) {
-    let fStart = f.start;
-    let fEnd = f.end;
-    // allow filler end to cross midnight
-    if (fEnd <= fStart) fEnd += 24 * 60;
-
-    // Trim against sleep
-    if (sleepEndMin && sleepStartMin && !(fEnd <= sleepStartMin || sleepEndMin <= fStart)) {
-      // overlap: trim filler to after sleep or before sleep
-      if (fStart < sleepStartMin && fEnd > sleepEndMin) {
-        // filler fully covers sleep: split not supported -> skip
-        continue;
-      }
-      if (fStart < sleepStartMin && fEnd > sleepStartMin) fEnd = sleepStartMin;
-      if (fStart < sleepEndMin && fEnd > sleepEndMin) fStart = sleepEndMin;
+  // Fill each gap by placing desired blocks in order, allowing truncation to fit
+  let desiredIdx = 0;
+  for (const gap of gaps) {
+    let pos = gap.start;
+    let remaining = gap.end - pos;
+    while (remaining > 10) {
+      const d = desired[desiredIdx % desired.length];
+      const placeDur = Math.min(d.dur, remaining);
+      blocks.push({ start: fromMinutes(pos), end: fromMinutes(pos + placeDur), title: d.title, category: d.category });
+      pos += placeDur;
+      remaining = gap.end - pos;
+      desiredIdx += 1;
     }
-
-    // Trim against commitments
-    for (const cc of normCommitments) {
-      if (fEnd <= cc.start || cc.end <= fStart) continue;
-      // overlap exists; try trimming filler start forward past commitment end
-      if (cc.end < fEnd) {
-        fStart = Math.max(fStart, cc.end);
-      } else if (cc.start > fStart) {
-        fEnd = Math.min(fEnd, cc.start);
-      } else {
-        // commitment fully covers filler -> skip
-        fStart = fEnd;
-      }
-    }
-
-    if (fEnd > fStart) {
-      blocks.push({ start: fromMinutes(fStart), end: fromMinutes(fEnd), title: f.title, category: f.category });
+    if (remaining > 0 && remaining <= 10) {
+      // small leftover -> mark as Free time
+      blocks.push({ start: fromMinutes(gap.end - remaining), end: fromMinutes(gap.end), title: "Free time", category: "Personal" });
     }
   }
 
