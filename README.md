@@ -9,6 +9,7 @@ Image of website with example schedule:
 ## Features
 - Constraint-based schedule generation
 - AI-generated JSON calendar
+- Fallback schedule generator for when AI doesn't work properly
 - Apple Calendar–inspired UI
 - Currently set to a one day schedule
   
@@ -27,6 +28,7 @@ Image of website with example schedule:
 <img width="804" height="128" alt="image" src="https://github.com/user-attachments/assets/ab55937d-bf26-4d30-8189-691071cc4502" />
 
 - Also there are still occasionally bugs like a time slot being empty, or just weird stuff like "Focused work" for 5 hours straight
+- AI generates incorrect JSON so fallback is used
 
 ## Want to add: 
 - Better looking UI
