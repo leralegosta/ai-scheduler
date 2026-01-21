@@ -234,7 +234,27 @@ function buildFallbackSchedule(prefs = {}) {
   }
 
   blocks.sort((a, b) => toMinutes(a.start) - toMinutes(b.start));
-  return { date, blocks };
+
+  // Merge adjacent blocks with the same title and category.
+  // If gaps between identical blocks are small (<= mergeThreshold minutes), merge them.
+  const mergeThreshold = 5; // minutes
+  const merged = [];
+  for (const b of blocks) {
+    const last = merged.length ? merged[merged.length - 1] : null;
+    if (last && last.title === b.title && last.category === b.category) {
+      const lastEndMin = toMinutes(last.end);
+      const bStartMin = toMinutes(b.start);
+      const bEndMin = toMinutes(b.end);
+      if (bStartMin <= lastEndMin + mergeThreshold) {
+        // extend last block's end if this block goes further
+        if (bEndMin > lastEndMin) last.end = fromMinutes(bEndMin);
+        continue; // merged
+      }
+    }
+    merged.push({ ...b });
+  }
+
+  return { date, blocks: merged };
 }
 
 app.listen(3001, () => console.log("Backend running on port 3001"));

@@ -17,3 +17,64 @@ body {
   background: var(--bg);
   color: var(--text);
 }
+
+/* FullCalendar layout fixes: ensure calendar fills container and columns don't get narrow/centered */
+.fc {
+  width: 100% !important;
+  text-align: left !important;
+}
+.fc .fc-view-harness {
+  width: 100% !important;
+}
+.fc .fc-timegrid .fc-timegrid-col,
+.fc .fc-timegrid .fc-timegrid-col-frame {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+/* Make calendar scroller expand to container height/width */
+.fc .fc-scroller {
+  overflow: auto !important;
+  width: 100% !important;
+}
+
+/* Stronger calendar-root rules to ensure columns fill available space */
+.calendar-root {
+  width: 100%;
+  text-align: left !important;
+}
+.calendar-root .fc {
+  width: 100% !important;
+}
+.calendar-root .fc .fc-timegrid .fc-timegrid-cols {
+  display: flex !important;
+  width: 100% !important;
+}
+.calendar-root .fc .fc-timegrid .fc-timegrid-col {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+}
+.calendar-root .fc .fc-timegrid .fc-timegrid-col-frame {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.calendar-root .fc .fc-scrollgrid-section {
+  display: flex !important;
+}
+
+/* Use an explicit grid: first column is the time axis, second is the events area */
+.calendar-root .fc .fc-timegrid .fc-timegrid-cols {
+  display: grid !important;
+  grid-template-columns: 4rem 1fr !important;
+  align-items: start !important;
+}
+.calendar-root .fc .fc-timegrid .fc-timegrid-col {
+  width: auto !important;
+  flex: none !important;
+}
+.calendar-root .fc .fc-timegrid .fc-timegrid-col-frame {
+  padding-left: 0 !important;
+}
+.calendar-root .fc .fc-timegrid .fc-timegrid-gutter {
+  display: none !important;
+}

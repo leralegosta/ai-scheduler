@@ -16,6 +16,7 @@ export default function CalendarView({ schedule }: { schedule: DailySchedule }) 
 
   return (
     <div style={cardStyle}>
+      <div className="calendar-root" style={{ width: "100%" }}>
       <FullCalendar
         plugins={[timeGridPlugin]}
         initialView="timeGridDay"
@@ -34,6 +35,7 @@ export default function CalendarView({ schedule }: { schedule: DailySchedule }) 
             textColor: "#000",
           }))}
       />
+      </div>
     </div>
   );
 }
@@ -50,4 +52,6 @@ const cardStyle: React.CSSProperties = {
   background: "var(--card)",
   padding: "1rem",
   borderRadius: 16,
+  width: "100%",
+  textAlign: "left",
 };
