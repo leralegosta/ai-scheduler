@@ -18,7 +18,7 @@ Image of website with example schedule:
 - Local LLM (Ollama) 
 
 ## Some bugs
-- If wake-up and sleep times are "weird" (like waking at 12 PM and going to sleep at 3 AM), the schedule will look very strange with a ton of empty space (for sleeping):
+- (FIXED!!!) If wake-up and sleep times are "weird" (like waking at 12 PM and going to sleep at 3 AM), the schedule will look very strange with a ton of empty space (for sleeping):
 
 <img width="804" height="508" alt="image" src="https://github.com/user-attachments/assets/700df750-1f75-43c1-855e-5c0bf3a5b5fe" />
 
