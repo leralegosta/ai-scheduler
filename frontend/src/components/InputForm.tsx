@@ -19,7 +19,7 @@ export default function InputForm({ onGenerate }: Props) {
     setError(null);
     setLoading(true);
     const controller = new AbortController();
-    const timeoutId: number = window.setTimeout(() => controller.abort(), 8000);
+    const timeoutId: number = window.setTimeout(() => controller.abort(), 20000);
     try {
       const res = await fetch("http://localhost:3001/generate", {
         method: "POST",

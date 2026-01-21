@@ -6,13 +6,73 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const base = process.env.OLLAMA_URL || "http://localhost:11434";
+
 // health check endpoint
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
+
+// check if schedule is ok
+function isValidSchedule(data) {
+  if (!data || !Array.isArray(data.blocks) || data.blocks.length === 0) {
+    return false;
+  }
+
+  const allowed = ["Sleep", "Health", "Academics", "Work", "Personal"];
+
+  return data.blocks.every(b =>
+    typeof b.start === "string" &&
+    typeof b.end === "string" &&
+    typeof b.title === "string" &&
+    b.title.trim().length > 0 &&
+    allowed.includes(b.category)
+  );
+}
+
 
 // schedule generation endpoint
 app.post("/generate", async (req, res) => {
   console.log("/generate request received", { body: req.body });
-  const prompt = `You are a scheduling AI.\n\nRules:\n- Output valid JSON only\n- No explanations\n- No markdown\n\nSchema:\n{\n  \"date\": \"YYYY-MM-DD\",\n  \"blocks\": [\n    { \"start\": \"HH:MM\", \"end\": \"HH:MM\", \"title\": \"\", \"category\": \"Sleep|Health|Academics|Work|Personal\" }\n  ]\n}\n\nInput:\n${JSON.stringify(req.body)}`;
+
+  const prompt = `
+You are a JSON generator.
+
+You MUST output valid JSON.
+Do NOT include markdown.
+Do NOT include explanations.
+Do NOT include code fences.
+Do NOT include extra text.
+
+If output is not valid JSON, the response is invalid.
+
+Schema:
+{
+  "date": "YYYY-MM-DD",
+  "blocks": [
+    {
+      "start": "HH:MM",
+      "end": "HH:MM",
+      "title": "string",
+      "category": "Sleep|Health|Academics|Work|Personal"
+    }
+  ]
+}
+Example output:
+{
+  "date": "2026-01-21",
+  "blocks": [
+    {
+      "start": "08:00",
+      "end": "09:00",
+      "title": "Morning routine",
+      "category": "Health"
+    }
+  ]
+}
+
+
+Input:
+${JSON.stringify(req.body)}
+`;
 
   // By default use the deterministic fallback scheduler.
   // Set environment variable `USE_MODEL=true` to attempt calling the local model instead.
@@ -24,22 +84,36 @@ app.post("/generate", async (req, res) => {
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const base = process.env.OLLAMA_URL || "http://localhost:11434";
     const resp = await fetch(`${base}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "llama3.1", prompt, format: "json", stream: false }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "llama3.1",
+      prompt,
+      format: "json",
+      options: { temperature: 0 },
+      stream: false
+    })
+  });
+  
     if (!resp.ok) throw new Error(`Ollama HTTP ${resp.status}`);
     const payload = await resp.json();
     console.log("Ollama response:", payload);
+
+    function extractJSON(text) {
+      const first = text.indexOf("{");
+      const last = text.lastIndexOf("}");
+      if (first === -1 || last === -1) throw new Error("No JSON found");
+      return JSON.parse(text.slice(first, last + 1));
+    }
+
     const raw = payload.response ?? payload;
-    const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const data = typeof raw === "string" ? extractJSON(raw) : raw;
+
+    if (!isValidSchedule(data)) {
+      throw new Error("Invalid schedule returned by model");
+    }
+
     console.log("/generate success via Ollama");
     console.log("Generated schedule:", data);
     return res.json(data);
