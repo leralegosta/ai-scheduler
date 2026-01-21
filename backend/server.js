@@ -254,7 +254,7 @@ function buildFallbackSchedule(prefs = {}) {
     merged.push({ ...b });
   }
 
-  return { date, blocks: merged };
+  return { date, wake_time: wake, bed_time: bed, blocks: merged };
 }
 
 app.listen(3001, () => console.log("Backend running on port 3001"));
